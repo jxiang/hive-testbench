@@ -13,8 +13,13 @@ set mapreduce.input.fileinputformat.split.minsizee=240000000;
 set mapreduce.input.fileinputformat.split.minsize.per.node=240000000;
 set mapreduce.input.fileinputformat.split.minsize.per.rack=240000000;
 
--- set mapred.map.child.java.opts=-server -Xmx2800m -Djava.net.preferIPv4Stack=true;
--- set mapred.reduce.child.java.opts=-server -Xms1024m -Xmx3800m -Djava.net.preferIPv4Stack=true;
--- set mapreduce.map.memory.mb=3072;
--- set mapreduce.reduce.memory.mb=4096;
--- set io.sort.mb=800;
+set mapreduce.map.java.opts=-Xmx9728m;
+set mapreduce.reduce.java.opts=-Xmx9728m;
+set mapreduce.map.memory.mb=10752;
+set mapreduce.reduce.memory.mb=10752;
+set io.sort.mb=1228;
+
+set hive.exec.orc.default.buffer.size=32768;
+set hive.optimize.sort.dynamic.partition=true;
+set parquet.memory.pool.ratio=0.3;
+
