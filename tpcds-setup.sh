@@ -42,7 +42,7 @@ if [ X"$SCALE" = "X" ]; then
 	usage
 fi
 if [ X"$DIR" = "X" ]; then
-	DIR=/user/hive/warehouse/tpcds_text_${SCALE}.db
+	DIR=/data/hive/warehouse/tpcds_text_${SCALE}.db
 fi
 if [ $SCALE -eq 1 ]; then
 	echo "Scale factor must be greater than 1"
@@ -52,6 +52,9 @@ fi
 # Do the actual data load.
 hdfs dfs -ls ${DIR}/ > /dev/null
 if [ $? -ne 0 ]; then
+  echo "Dropping tpcds_text_${SCALE} if exists"
+  hive -e "drop database if exists tpcds_text_${SCALE} cascade"
+
 	echo "Generating data at scale factor $SCALE."
   pushd tpcds-gen
 	if ! hadoop jar target/*.jar -d ${DIR}/ -s ${SCALE}
@@ -61,21 +64,26 @@ if [ $? -ne 0 ]; then
   fi
   popd
   echo "TPC-DS text data generation complete."
-fi
 
-# Create the text/flat tables as external tables. These will be later be converted to ORCFile.
-echo "Loading text data into external tables."
-runcommand "hive -i settings/load-flat.sql -f ddl-tpcds/text/alltables.sql -d DB=tpcds_text_${SCALE}"
+  # Create the text/flat tables as external tables. These will be later be converted to ORCFile.
+  echo "Loading text data into external tables."
+  runcommand "hive -i settings/load-flat.sql -f ddl-tpcds/text/alltables.sql -d DB=tpcds_text_${SCALE}"
+fi
 
 # Create the partitioned and bucketed tables.
 if [ "X$FORMAT" = "X" ]; then
 	FORMAT=orc
 fi
-i=1
-total=24
 DATABASE=tpcds_bin_partitioned_${FORMAT}_${SCALE}
-for t in ${FACTS}
-do
+hdfs dfs -ls /data/hive/warehouse/${DATABASE}.db/ > /dev/null
+if [ $? -ne 0 ]; then
+  echo "Dropping ${DATABASE} if exists"
+  hive -e "drop database if exists ${DATABASE} cascade"
+
+  i=1
+  total=24
+  for t in ${FACTS}
+  do
 	echo "Optimizing table $t ($i/$total)."
 	COMMAND="hive -i settings/load-partitioned.sql -f ddl-tpcds/bin_partitioned/${t}.sql \
 	    -d DB=tpcds_bin_partitioned_${FORMAT}_${SCALE} \
@@ -87,11 +95,11 @@ do
 		exit 1
 	fi
 	i=`expr $i + 1`
-done
+  done
 
-# Populate the smaller tables.
-for t in ${DIMS}
-do
+  # Populate the smaller tables.
+  for t in ${DIMS}
+  do
 	echo "Optimizing table $t ($i/$total)."
 	COMMAND="hive -i settings/load-partitioned.sql -f ddl-tpcds/bin_partitioned/${t}.sql \
 	    -d DB=tpcds_bin_partitioned_${FORMAT}_${SCALE} -d SOURCE=tpcds_text_${SCALE} \
@@ -102,6 +110,7 @@ do
 		exit 1
 	fi
 	i=`expr $i + 1`
-done
+  done
 
-echo "Data loaded into database ${DATABASE}."
+  echo "Data loaded into database ${DATABASE}."
+fi
