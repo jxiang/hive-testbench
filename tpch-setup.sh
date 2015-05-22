@@ -39,21 +39,21 @@ if [ X"$SCALE" = "X" ]; then
 	usage
 fi
 if [ X"$DIR" = "X" ]; then
-  DIR=/user/hive/warehouse/tpch_text_${SCALE}.db
+  DIR=/data/hive/warehouse/tpch_text_${SCALE}.db
 fi
 if [ $SCALE -eq 1 ]; then
 	echo "Scale factor must be greater than 1"
 	exit 1
 fi
 
-
-
-
 # Do the actual data load.
 hdfs dfs -ls ${DIR}/ > /dev/null
 if [ $? -ne 0 ]; then
+  echo "Dropping tpch_text_${SCALE} if exists"
+  hive -e "drop database if exists tpch_text_${SCALE} cascade"
+
   echo "Generating data at scale factor $SCALE."
-  pushd tpcds-gen
+  pushd tpch-gen
   if ! hadoop jar target/*.jar -d ${DIR}/ -s ${SCALE}
   then
     echo "Data generation failed, exiting."
@@ -65,14 +65,22 @@ fi
 
 # Create the text/flat tables as external tables. These will be later be converted to ORCFile.
 echo "Loading text data into external tables."
-runcommand "hive -i settings/load-flat.sql -f ddl-tpch/bin_flat/alltables.sql -d DB=tpch_text_${SCALE} -d LOCATION=${DIR}/${SCALE}"
+runcommand "hive -i settings/load-flat.sql -f ddl-tpch/bin_flat/alltables.sql -d DB=tpch_text_${SCALE} -d LOCATION=${DIR}"
 
 # Create the optimized tables.
-i=1
-total=8
-DATABASE=tpch_bin_partitioned_orc_${SCALE}
-for t in ${TABLES}
-do
+if [ "X$FORMAT" = "X" ]; then
+        FORMAT=orc
+fi
+DATABASE=tpch_bin_partitioned_${FORMAT}_${SCALE}
+hdfs dfs -ls /data/hive/warehouse/${DATABASE}.db/ > /dev/null
+if [ $? -ne 0 ]; then
+  echo "Dropping ${DATABASE} if exists"
+  hive -e "drop database if exists ${DATABASE} cascade"
+
+  i=1
+  total=8
+  for t in ${TABLES}
+  do
 	echo "Optimizing table $t ($i/$total)."
 	COMMAND="hive -i settings/load-flat.sql -f ddl-tpch/bin_flat/${t}.sql \
 	    -d DB=tpch_bin_flat_orc_${SCALE} \
@@ -84,6 +92,7 @@ do
 		exit 1
 	fi
 	i=`expr $i + 1`
-done
+  done
 
-echo "Data loaded into database ${DATABASE}."
+  echo "Data loaded into database ${DATABASE}."
+fi
